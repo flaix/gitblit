@@ -1,0 +1,373 @@
+name: Prepare Gitblit release
+
+on:
+  push:
+    branches:
+      - release-builder
+      - release
+
+jobs:
+
+  build_and_test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    # Precaution, just to make sure this doesn't run should it end up in some other repo by accident
+    if: github.repository == 'flaix/gitblit'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v1
+        with:
+          submodules: true
+
+      - name: Setup Java 7
+        uses: actions/setup-java@v1
+        with:
+          java-version: 7
+
+      - name: Report Java version
+        run: |
+          java -version
+          javac -version
+
+      - name: Cache moxie and dependencies
+        uses: actions/cache@v2
+        with:
+          path: ~/.moxie
+          key: ${{ runner.os }}-moxie-${{ hashFiles('build.moxie') }}
+
+      - name: Setup Moxie
+        run: |
+          wget http://gitblit.github.io/moxie/maven/com/gitblit/moxie/moxie+ant/0.9.4/moxie+ant-0.9.4.tar.gz
+          tar -xzf moxie+ant-0.9.4.tar.gz
+          moxie-0.9.4/bin/moxie -version
+
+      - name: Build with Moxie
+        run:  |
+          moxie-0.9.4/bin/moxie
+          moxie-0.9.4/bin/moxie buildGO
+
+      - name: Gitblit GO test run
+        run: |
+          mkdir gitblit-GO
+          tar -xzf build/target/gitblit-*.tar.gz -C gitblit-GO --strip-components 1
+          cd gitblit-GO
+          ls -l
+          ./gitblit.sh > gitblit.log 2>&1 &
+          sleep 2
+          wait=120
+          ok=0
+          while [ $wait -gt 0 ] ; do
+            if grep "All managers started" gitblit.log ; then
+              ok=$((ok | 1))
+            fi
+            if grep "Started Wicket" gitblit.log ; then
+              ok=$((ok | 2))
+            fi
+            if grep "Started ServerConnector" gitblit.log ; then
+              ok=$((ok | 4))
+            fi
+
+            if [ $ok == 7 ] ; then
+              echo "Gitblit started okay"
+              wait=0
+            else
+              echo "Waiting for Gitblit to start successfully"
+              sleep 5
+              : $((wait -= 5))
+            fi
+
+            if grep "Failed" gitblit.log ; then
+              echo "Failure deteceted when starting Gitblit."
+              ok=-1
+              wait=0
+            fi
+          done
+
+          ./gitblit-stop.sh
+          sleep 2
+
+          if [ $ok != 7 ] ; then
+            echo "Gitblit could not be started successfully."
+            exit 11
+          fi
+
+
+  build_release:
+    name: Prepare release build
+    runs-on: ubuntu-latest
+    needs: build_and_test
+    env:
+      GH_ORG: flaix
+      moxie: moxie-0.9.4/bin/moxie
+      versinfo: ../verinf.sh
+      targetBranch: master
+      RPWF_COMMIT_MSG: 'Release: Add release workflows'
+      RELWF_FILENAME: '.github/workflows/gitblit-release-.*.yaml'
+      TRGWF_FILENAME: '.github/workflows/trigger-gitblit-release-.*.yaml'
+
+    steps:
+      - name: Get event environment
+        run: |
+          echo "GITHUB_SHA: $GITHUB_SHA"
+          echo "GITHUB_REF: $GITHUB_REF"
+          echo "GITHUB_HEAD_REF: $GITHUB_HEAD_REF"
+          echo "GITHUB_BASE_REF: $GITHUB_BASE_REF"
+          echo "GITHUB_EVENT_NAME: $GITHUB_EVENT_NAME"
+
+
+      - name: Setup Java 7
+        uses: actions/setup-java@v1
+        with:
+          java-version: 7
+
+      - name: Report Java version
+        run: |
+          java -version
+          javac -version
+
+
+
+      - name: Set up Git properties
+        run: |
+          set -x 
+          git config --global user.name ${{ github.event.pusher.name }}
+          git config --global user.email ${{ github.event.pusher.email }}
+
+
+      - name: Checkout my gitblit repo for process
+        uses: actions/checkout@v2
+        with:
+          path: gitblit
+          fetch-depth: 20
+          submodules: true
+
+      - name: Fetch all remote branches
+        working-directory: gitblit
+        run: |
+          git fetch --prune --depth=20 origin +refs/heads/*:refs/remotes/origin/*
+          git branch -a
+
+
+      - name: Determine fork point
+        working-directory: gitblit
+        run: |
+          forkPoint=$(git merge-base origin/release-builder origin/$targetBranch)
+          if [ -z "$forkPoint" ] ; then
+            echo "No fork point found to branch release branch off"
+            exit 11
+          fi
+          echo "FORK_POINT=$forkPoint" >> $GITHUB_ENV
+
+
+
+      - name: Create or checkout release branch
+        if: ${{ github.ref != 'refs/heads/release' }}
+        working-directory: gitblit
+        run: |
+          if [ -n "$(git branch -l -r origin/release)" ] ; then
+            echo "Checking out existing branch 'release'"
+            git fetch origin +release
+            git checkout release
+          else
+            echo "Creating release branch on commit ${{ env.FORK_POINT }}"
+            git checkout -b release ${{ env.FORK_POINT }}
+          fi
+          [ "$(git symbolic-ref -q --short HEAD)" == "release" ] || exit 1
+
+
+      - name: Checkout gitblit maven repository
+        uses: actions/checkout@v2
+        with:
+          path: gitblit-maven
+          repository: ${{ env.GH_ORG }}/gitblit-maven
+          token: ${{ secrets.INTER_REPO_OPS_PAT }}
+          ref: gh-pages
+
+
+
+      - name: Create release branch in gitblit-maven repository
+        working-directory: gitblit-maven
+        run: |
+          echo "Creating new release branch on commit $(git rev-parse HEAD)"
+          git checkout -b release
+          [ "$(git symbolic-ref -q --short HEAD)" == "release" ] || exit 1
+
+
+      - name: Setup Moxie
+        run: |
+          wget http://gitblit.github.io/moxie/maven/com/gitblit/moxie/moxie+ant/0.9.4/moxie+ant-0.9.4.tar.gz
+          tar -xzf moxie+ant-0.9.4.tar.gz
+          $moxie -version
+          rm moxie+ant-0.9.4.tar.gz
+
+
+
+      - name: Determine release version and tag name
+        working-directory: gitblit
+        run:  |
+          ../$moxie -DversionInfo=${versinfo} determineReleaseVersion > /dev/null
+          cat ${versinfo} >> $GITHUB_ENV
+          . ${versinfo}
+          echo "Release version $GBLT_RELEASE_VERSION with tag $GBLT_RELEASE_TAG"
+
+
+      # Create a release version and tag the commit. Should the release tag already exist
+      # from a previous run, then move the existing tag to the current tip of the release
+      # branch. It probably means that a commit was added to release branch.
+      - name: Create release version or move existing tag
+        working-directory: gitblit
+        run:  |
+          tagname=$(git rev-parse "${{ env.GBLT_RELEASE_TAG}}" -- 2>/dev/null | head -n1)
+          if [ -z "$tagname" ] ; then
+            echo "Creating release version and release tag."
+            ../$moxie tagRelease
+          else
+            # Check if the current HEAD is already tagged. If not, and if it is not the
+            # commit that adds the release workflows, update the release tag.
+            if git log --oneline -n 1 | grep -q -v "$RPWF_COMMIT_MSG" ; then
+              currHead="$(git rev-parse HEAD)"
+              if [ "$currHead" != "$(git rev-parse ${GBLT_RELEASE_TAG}^{commit})" ] ; then
+                echo "Updating annotated release tag to current head of release branch"
+                git tag -f -a -m "$(git for-each-ref refs/tags/${{env.GBLT_RELEASE_TAG}} --format='%(contents)')" ${{ env.GBLT_RELEASE_TAG }}
+                git show --no-patch ${{ env.GBLT_RELEASE_TAG }}
+              fi
+            fi
+          fi
+
+
+
+
+      # Add the workflow files to the release branch. Either because they do not
+      # exist here yet, because release-builder has been pushed for the first time,
+      # or get the latest version on here, because release-builder was updated and
+      # pushed. In the latter case the current commit needs to be removed first.
+      # Which doesn't make the workflow easier, because it requires a force push.
+      - name: Add release workflows to release branch.
+        if: ${{ github.ref == 'refs/heads/release-builder' }}
+        working-directory: gitblit
+        run:  |
+          rpwfcommit=$(git log --oneline origin/${targetBranch}..HEAD | grep "$RPWF_COMMIT_MSG"| cut -d' ' -f1)
+          if [ -n "$rpwfcommit" ] ; then
+            echo "Removing commit $rpwfcommit from release branch."
+            GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick ${rpwfcommit}/drop ${rpwfcommit}/'" git rebase -i "${rpwfcommit}~1"
+            echo "Making sure that the tree between the HEAD and release tag are still the same."
+            if git diff-tree -r --name-only "${{ env.GBLT_RELEASE_TAG }}" HEAD | grep -v "${{env.RELWF_FILENAME}}" | grep -v "${{env.TRGWF_FILENAME}}" ; then
+              echo "Found more changed files between release tag and rebased HEAD. Something is not right."
+              echo "Need to abort here."
+              git diff-tree -t "${{ env.GBLT_RELEASE_TAG }}" HEAD
+              git log --oneline --graph --decorate --all -n 100
+              exit 1
+            fi
+            currHead="$(git rev-parse HEAD)"
+            if [ "$currHead" != "$(git rev-parse ${GBLT_RELEASE_TAG}^{commit})" ] ; then
+              echo "Moving annotated release tag to current head of release branch"
+              git cat-file -p refs/tags/${GBLT_RELEASE_TAG} | sed "1 s/^object .*$/object ${currHead}/g" | git hash-object -w --stdin -t tag | xargs -I {} git update-ref refs/tags/${GBLT_RELEASE_TAG} {}
+              git show --no-patch ${{ env.GBLT_RELEASE_TAG }}
+            fi
+          fi
+
+          echo "Adding release workflows"
+          git cherry-pick --no-commit origin/${targetBranch}..origin/release-builder
+          git commit -m "$RPWF_COMMIT_MSG"
+
+
+      - name: Push updated release branch and release tag
+        working-directory: gitblit
+        run: |
+          git status
+          git push origin -f release
+          git push -f origin ${{ env.GBLT_RELEASE_TAG }}
+
+
+
+      - name: Build release artifacts
+        working-directory: gitblit
+        run: |
+          ../$moxie clean buildAll buildMavenArtifacts
+
+
+
+      - name: Commit Maven artifacts
+        working-directory: gitblit-maven
+        run: |
+          git diff -R -U2 -- artifacts.json | awk 'BEGIN{FS="\n" ; RS="@"; ORS="@"} { for (i=1;i<=NF;i++){if ($i ~ /description/) {print "Skip block";next;}} print $0 }' | sed -e 's/^@@ .* @@Skip block//' -e '/^@$/ d' | patch -p1 artifacts.json
+          git diff -- artifacts.json
+          git add .
+          git commit -m "Release ${{ env.GBLT_RELEASE_VERSION }} artifacts"
+          
+      - name: Update website
+        working-directory: gitblit
+        run: |
+          tagname=$(git rev-parse "pages-pre-release-${{ env.GBLT_RELEASE_TAG }}" -- 2>/dev/null | head -n1)
+          if [ -z "$tagname" ] ; then
+            echo "Create local gh-pages branch"
+            git branch --force --track gh-pages refs/remotes/origin/gh-pages
+            echo "Creating backup tag for gh-pages."
+            git tag pages-pre-release-${{ env.GBLT_RELEASE_TAG }} gh-pages
+
+          else
+            # The tag already exists, i.e. we probably already had an update and pushed it.
+            # Since the script keeps adding nonsenical empty commits, let's instead base
+            # the new commit on top of the backup tag and force push later. So that only
+            # one commit to update the pages is added for this release.
+            echo "Create local gh-pages branch on top of backup tag."
+            git branch --force gh-pages pages-pre-release-${{ env.GBLT_RELEASE_TAG }}        
+          fi
+          ../$moxie updateSite
+
+
+
+      # Check if there is already a pending draft release.
+      # If so, we update the release notes and the artifacts,
+      # if not, a new release draft is created and artifacts attached.
+      - name: Create release draft and upload artifacts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: gitblit
+        run: |
+          releaseInfo=$(gh release view ${{ env.GBLT_RELEASE_TAG }} --json name,isDraft || true)
+          if [ -z "$releaseInfo" ] ; then
+            ../$moxie -Dgh.org=${{env.GH_ORG}} releaseBinaries
+          else
+            ../$moxie -Dgh.org=${{env.GH_ORG}} -DupdateRelease=true releaseBinaries
+          fi
+
+
+      - name: Push Maven artifacts to repository
+        working-directory: gitblit-maven
+        run: git push -f origin release
+
+      - name: Push updated gh-pages and pre-release tag
+        working-directory: gitblit
+        run: |
+          git status
+          git push -f origin gh-pages
+          git push origin pages-pre-release-${{ env.GBLT_RELEASE_TAG }}
+
+
+      # Create a pull request as a trigger to perform the release
+      - name: Create release trigger PR
+        working-directory: gitblit
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh pr view release --json state,title --jq '"\(.state):\(.title)"' | grep OPEN | grep "release of version ${{ env.GBLT_RELEASE_VERSION }}"  ; then
+            echo "PR already exists."
+          elif gh pr view release --json state,title --jq '"\(.state):\(.title)"' | grep OPEN ; then
+            echo "PR already exists but apparently not for our release ${{ env.GBLT_RELEASE_VERSION }}."
+          else
+            gh pr create --title "Perform release of version ${{ env.GBLT_RELEASE_VERSION }}" --base $targetBranch --draft --body 'Approve this pull request to perform the release of version ${{ env.GBLT_RELEASE_VERSION }}
+
+            You can add comments, either to the review or the pull request, to specify which version to increase.
+            Commands can be like
+            `Increment minor version`, or
+            `Increase patch version`.
+
+            Increasing the major version is not supported.
+
+            A branch `release` was created. You can still add necessary fixes to this branch and push it again, until you are good to go.
+
+            This PR is set as a draft. If left as draft, no downstream workflows are run, such as releasing Docker images. Set it to `Ready for Review` if approving the PR should also perform downstream workflows (Docker images).'
+          fi
+
