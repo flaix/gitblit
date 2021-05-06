@@ -15,6 +15,11 @@ pipeline {
         }
       }
     }
+    stage('Approve Tests') {
+      steps {
+        input "Approve tests and proceed with artifact build?"
+      }
+    }
     stage('Build all') {
       steps {
         withAnt(installation: 'Ant 1.10') {
