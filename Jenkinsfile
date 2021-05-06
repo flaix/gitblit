@@ -7,6 +7,7 @@ pipeline {
           sh "ant"
         }
       }
+    }
     stage('Test') {
       steps {
         withAnt(installation: 'Ant 1.10') {
