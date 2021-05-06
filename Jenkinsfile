@@ -35,7 +35,7 @@ pipeline {
         script {
           def apparts = input (message:  "Approve release?", submitter: "florian", parameters: [ 
             [$class: 'ExtensibleChoiceParameterDefinition', description: 'Artifacts to release', name: 'Artifacts', choiceListProvider: 
-              [$class: 'FilenameChoiceListProvider', baseDirPath: './build/target', scanType: File]
+              [$class: 'FilenameChoiceListProvider', baseDirPath: './build/target', scanType: ScanType.File]
             ]
           ])
           echo "Approved artifacts: $apparts"
