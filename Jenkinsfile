@@ -18,17 +18,6 @@ pipeline {
     stage('Approve Tests') {
       agent none
       steps {
-        script {
-          def list = []
-          def dir = new File(pwd(), "build/target")
-          // If you don't want to search recursively then change `eachFileRecurse` -> `eachFile`
-          dir.eachFile(groovy.io.FileType.FILES) {
-            list << it.getName()
-          }
-          list.join("\n")
-          echo "Files: " + list
-        }
-
         input "Approve tests and proceed with artifact build?"
       }
     }
@@ -43,12 +32,6 @@ pipeline {
       agent none
       steps {
         sh "ls -l build/target"
-        
-      }
-    }
-    stage('Create deployment') {
-      steps {
-        sh "ls -l build/target"
         script {
           def list = []
           def dir = new File(pwd(), "build/target")
@@ -59,6 +42,13 @@ pipeline {
           list.join("\n")
           echo "Files: " + list
         }
+
+      }
+    }
+    stage('Create deployment') {
+      steps {
+        sh "ls -l build/target"
+        env
       }
     }
     stage('Approve deployment') {
