@@ -48,7 +48,7 @@ pipeline {
     stage('Create deployment') {
       steps {
         sh "ls -l build/target"
-        env
+        sh "env"
       }
     }
     stage('Approve deployment') {
