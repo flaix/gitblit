@@ -44,7 +44,7 @@ pipeline {
       steps {
         input "Approve tests and proceed with artifact build?"
         sh "ls -l"
-        sh "evho triggering some URL
+        sh "echo triggering some URL"
       }
     }
   }
