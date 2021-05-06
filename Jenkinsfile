@@ -33,7 +33,7 @@ pipeline {
       steps {
         sh "ls -l build/target"
         script {
-          def apparts = input (message:  "Approve release?" submitter: "florian" parameters: [ 
+          def apparts = input (message:  "Approve release?", submitter: "florian", parameters: [ 
             [$class: 'ExtensibleChoiceParameterDefinition', description: 'Artifacts to release', name: 'Artifacts', choiceListProvider: 
               [$class: 'FilenameChoiceListProvider', baseDirPath: './build/target', scanType: Files]
             ]
