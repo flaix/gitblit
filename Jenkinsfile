@@ -31,12 +31,20 @@ pipeline {
     stage('Approve Release') {
       agent none
       steps {
-        input "Approve release?"
+        sh "ls -l build/target"
+        script {
+          def apparts = input (message:  "Approve release?" submitter: "florian" parameters: [ 
+            [$class: 'ExtensibleChoiceParameterDefinition', description: 'Artifacts to release', name: 'Artifacts', choiceListProvider: 
+              [$class: 'FilenameChoiceListProvider', baseDirPath: './build/target', scanType: Files]
+            ]
+          ])
+          echo "Approved artifacts: $apparts"
+        }
       }
     }
     stage('Create deployment') {
       steps {
-        sh "ls -l"
+        sh "ls -l build/target"
       }
     }
     stage('Approve deployment') {
@@ -44,7 +52,7 @@ pipeline {
       steps {
         input "Approve tests and proceed with artifact build?"
         sh "ls -l"
-        sh "echo triggering some URL"
+        echo "Triggering some URL"
       }
     }
   }
