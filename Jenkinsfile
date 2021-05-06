@@ -48,7 +48,7 @@ pipeline {
           def dir = new File(pwd(), "build/target")
           def files = fileList(dir)
           def apparts = input( message: 'Approve release?', submitter: 'florian', parameters: [
-              extendedChoice name: 'Files', type: 'Multi Select', value: files
+              extendedChoice( name: 'Files', type: 'Multi Select', value: files)
           ])
             
           echo "Choice: " + apparts
