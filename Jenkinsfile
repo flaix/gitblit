@@ -28,5 +28,24 @@ pipeline {
         }
       }
     }
+    stage('Approve Release') {
+      agent none
+      steps {
+        input "Approve release?"
+      }
+    }
+    stage('Create deployment') {
+      steps {
+        sh "ls -l"
+      }
+    }
+    stage('Approve deployment') {
+      agent none
+      steps {
+        input "Approve tests and proceed with artifact build?"
+        sh "ls -l"
+        sh "evho triggering some URL
+      }
+    }
   }
 }
