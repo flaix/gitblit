@@ -16,6 +16,7 @@ pipeline {
       }
     }
     stage('Approve Tests') {
+      agent none
       steps {
         input "Approve tests and proceed with artifact build?"
       }
