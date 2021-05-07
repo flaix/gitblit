@@ -53,7 +53,7 @@ pipeline {
           echo "Files string: " + filesString
           
 //          def params = [ choice( name: 'Files', description: 'Select the files to release.', choices: files) ]
-            def params = { extendedChoice name: 'Files',
+            def params = [ extendedChoice( name: 'Files',
                                         description: 'Select files to release.', 
                                         type: 'PT_MULTI_SELECT',
                                         defaultValue: filesString, 
@@ -62,7 +62,7 @@ pipeline {
                                         //multiSelectDelimiter: ',', 
                                         //quoteValue: false,
                                         //saveJSONParameterToFile: false,
-                visibleItemCount: 5 }
+                visibleItemCount: 5) ]
           def apparts = input( message: 'Approve release?', submitter: 'florian', ok: 'Release', parameters: params)
             
           echo "Choice: " + apparts
