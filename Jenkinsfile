@@ -81,7 +81,7 @@ pipeline {
         echo "Release choice is $releasedFiles"
         script {
             def relFilesList = releasedFiles.split(',')
-            echo "Released files:"
+            echo "Creating deployment from released files:"
             for (fn in relFilesList ) {
                 echo "$fn"
             }
@@ -91,8 +91,7 @@ pipeline {
     stage('Approve deployment') {
       agent none
       steps {
-        input "Approve tests and proceed with artifact build?"
-        sh "ls -l"
+        input "Approve deployment?"
         echo "Triggering some URL"
       }
     }
