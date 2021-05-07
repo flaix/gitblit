@@ -91,7 +91,7 @@ pipeline {
     stage('Approve deployment') {
       agent none
       steps {
-        input "Approve deployment?"
+        input (message:  "Approve deployment?", ok: 'Yes')
         echo "Triggering some URL"
       }
     }
