@@ -49,18 +49,20 @@ pipeline {
           def dir = new File(pwd(), "build/target")
           def files = fileList(dir)
           echo "Files: " + files
+          def filesString = files.join(',')
+          echo "Files string: " + filesString
           
 //          def params = [ choice( name: 'Files', description: 'Select the files to release.', choices: files) ]
-          def params = [ extendedChoice name: 'Files',
+            def params = { extendedChoice name: 'Files',
                                         description: 'Select files to release.', 
                                         type: 'PT_MULTI_SELECT',
-                                        defaultValue: 'blue,green,yellow,blue', 
-                                        value: 'blue,green,yellow,blue',
+                                        defaultValue: filesString, 
+                                        value: filesString,
                                         //descriptionPropertyValue: 'blue,green,yellow,blue', 
                                         //multiSelectDelimiter: ',', 
                                         //quoteValue: false,
                                         //saveJSONParameterToFile: false,
-                                        visibleItemCount: 5 ]
+                visibleItemCount: 5 }
           def apparts = input( message: 'Approve release?', submitter: 'florian', ok: 'Release', parameters: params)
             
           echo "Choice: " + apparts
