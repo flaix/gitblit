@@ -7,6 +7,7 @@ def fileList(dir) {
       list << it.getName()
     }
     
+    return list
    // list.join(",")
 }
 
