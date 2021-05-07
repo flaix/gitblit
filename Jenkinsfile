@@ -82,7 +82,7 @@ pipeline {
         script {
             def relFilesList = releasedFiles.split(',')
             echo "Released files:"
-            for (fn : relFilesList ) {
+            for (fn in relFilesList ) {
                 echo "$fn"
             }
         }
