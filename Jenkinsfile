@@ -7,7 +7,7 @@ def fileList(dir) {
       list << it.getName()
     }
     
-    list.join(",")
+   // list.join(",")
 }
 
 pipeline {
@@ -48,8 +48,9 @@ pipeline {
           def dir = new File(pwd(), "build/target")
           def files = fileList(dir)
           echo "Files: " + files
+            
           def apparts = input( message: 'Approve release?', submitter: 'florian', parameters: [
-              extendedChoice( name: 'Files', type: 'Multi Select', value: 'ab,c')
+              choice( name: 'Files', description: 'Select the files to release.', choices: files)
           ])
             
           echo "Choice: " + apparts
