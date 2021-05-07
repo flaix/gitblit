@@ -11,6 +11,9 @@ def fileList(dir) {
    // list.join(",")
 }
 
+def releasedFiles = ''
+
+
 pipeline {
   agent any
   stages {
@@ -64,8 +67,10 @@ pipeline {
                                         //saveJSONParameterToFile: false,
                 visibleItemCount: 5) ]
           def apparts = input( message: 'Approve release?', submitter: 'florian', ok: 'Release', parameters: params)
-            
+          
           echo "Choice: " + apparts
+            
+          releasedFiles = apparts
         }
 
       }
@@ -73,7 +78,14 @@ pipeline {
     stage('Create deployment') {
       steps {
         sh "ls -l build/target"
-        sh "env"
+        echo "Release choice is $releasedFiles"
+        script {
+            def relFilesList = releasedFiles.split(',')
+            echo "Released files:"
+            for (fn : relFilesList ) {
+                echo "$fn"
+            }
+        }
       }
     }
     stage('Approve deployment') {
