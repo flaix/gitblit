@@ -39,6 +39,7 @@ SET ARCH=amd64
 		 --StopMode=jvm ^
 		 --Classpath="%gbhome%\gitblit.jar;%gbhome%\ext\*" ^
 		 --Jvm=auto ^
-		 --JvmMx=1024
+		 --JvmMx=1024 ^
+		 --JvmOptions9="--add-opens java.base/java.lang=ALL-UNNAMED"
 
 @ENDLOCAL

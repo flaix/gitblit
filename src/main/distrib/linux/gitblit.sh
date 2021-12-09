@@ -1,2 +1,2 @@
 #!/bin/bash
-java -cp "gitblit.jar:ext/*" com.gitblit.GitBlitServer --baseFolder data
+java --add-opens java.base/java.lang=ALL-UNNAMED -cp "gitblit.jar:ext/*" com.gitblit.GitBlitServer --baseFolder data

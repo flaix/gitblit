@@ -18,7 +18,7 @@ After=network.target
 [Service]
 User=gitblit
 Group=gitblit
-Environment="ARGS=-server -Xmx1024M -Djava.awt.headless=true -cp"
+Environment="ARGS=-server -Xmx1024M -Djava.awt.headless=true --add-opens java.base/java.lang=ALL-UNNAMED -cp"
 EnvironmentFile=-/etc/sysconfig/gitblit
 WorkingDirectory=/opt/gitblit
 ExecStart=/usr/bin/java \$ARGS gitblit.jar:ext/* com.gitblit.GitBlitServer --httpsPort \$GITBLIT_HTTPS_PORT --httpPort \$GITBLIT_HTTP_PORT --baseFolder \$GITBLIT_BASE_FOLDER --dailyLogFile
