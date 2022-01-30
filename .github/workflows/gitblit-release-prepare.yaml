@@ -97,6 +97,7 @@ jobs:
     needs: build_and_test
     env:
       GH_ORG: flaix
+      GH_UPSTREAM_ORG: gitblit-org
       versinfo: ../verinf.sh
       targetBranch: master
       RPWF_COMMIT_MSG: 'Release: Add release workflows'
@@ -159,6 +160,60 @@ jobs:
 
 
 
+      - name: Checkout upstream gitblit as reference
+        uses: actions/checkout@v4
+        with:
+          path: gitblit-ref
+          repository: ${{ env.GH_UPSTREAM_ORG }}/gitblit
+          token: ${{ secrets.GITBLIT_RELEASE_PAT }}
+          fetch-depth: 20
+
+      - name: Fetch all branches from upstream gitblit reference
+        working-directory: gitblit-ref
+        run: |
+          git fetch --no-tags --prune --depth=20 origin +refs/heads/*:refs/remotes/origin/*
+          git branch -a
+
+
+      # Make sure that our gitblit and the reference did not deviate. They should have the
+      # same commits on the target branch and both have the fork point of the release branch.
+      - name: Check commits in gitblit and reference repositories
+        run: |
+          cd gitblit-ref
+          refCm=$(git rev-parse origin/$targetBranch -- 2>/dev/null | head -n1)
+          refCf=$(git rev-parse ${{env.FORK_POINT}} -- 2>/dev/null | head -n1)
+          refCgh=$(git rev-parse origin/gh-pages -- 2>/dev/null | head -n1)
+
+          cd ../gitblit
+          gbCm=$(git rev-parse origin/$targetBranch -- 2>/dev/null | head -n1)
+          gbCf=$(git rev-parse ${{env.FORK_POINT}} -- 2>/dev/null | head -n1)
+          gbCgh=$(git rev-parse origin/gh-pages -- 2>/dev/null | head -n1)
+
+          echo "$refCm - $gbCm"
+          if [ x"$refCm" != x"$gbCm" ] ; then echo "Target branch '$targetBranch' not on same commit in gitblit repo (${GH_ORG}/gitblit) and reference (${GH_UPSTREAM_ORG}/gitblit)!" ; exit 11 ; fi
+          echo "$refCf - $gbCf"
+          if [ x"$refCf" != x"$gbCf" ] ; then echo "Fork point not present in both gitblit repo (${GH_ORG}/gitblit) and reference (${GH_UPSTREAM_ORG}/gitblit)" ; exit 12 ; fi
+          echo "$refCgh - $gbCgh"
+          if [ x"$refCgh" != x"$gbCgh" ] ; then
+            # If a release branch exists, chances are that the gh-pages were already updated.
+            # So in that case we only care if our gh-pages and upstream's gh-pages have diverged,
+            # i.e. upstream's gh-pages head is not in a direct line from ours, i.e. we are dealing
+            # with more than just new commits on our gh-pages branch.
+            ghtagname=$(git tag --list "pages-pre-release-v*" 2>/dev/null | head -n1)
+            if [ -n "$(git branch -l -r origin/release)" -a -n "$ghtagname" ] ; then
+              mergebase=$(git merge-base "$refCgh" "$gbCgh")
+              if [ x"$mergebase" != x"$refCgh" ] ; then
+                echo "Branch 'gh-pages' in gitblit repo (${GH_ORG}/gitblit) is not a direct child of reference (${GH_UPSTREAM_ORG}/gitblit)!"
+                exit 13
+              fi
+            else
+              echo "Branch 'gh-pages' not on same commit in gitblit repo (${GH_ORG}/gitblit) and reference (${GH_UPSTREAM_ORG}/gitblit)!"
+              exit 11
+            fi
+          fi
+        continue-on-error: false
+
+
       - name: Create or checkout release branch
         if: ${{ github.ref != 'refs/heads/release' }}
         working-directory: gitblit
@@ -182,6 +237,23 @@ jobs:
           token: ${{ secrets.INTER_REPO_OPS_PAT }}
           ref: gh-pages
 
+
+      # Make sure that our gitblit-maven and the reference did not deviate. They should have the
+      # same commits on the gh-pages branch.
+      - name: Check commits in gitblit-maven and reference repositories
+        working-directory: gitblit-maven
+        run: |
+          gbCgh=$(git rev-parse origin/gh-pages -- 2>/dev/null | head -n1)
+
+          ups_url=$(git remote get-url origin | sed -e 's;github.com/${{ env.GH_ORG }}/;github.com/${{ env.GH_UPSTREAM_ORG }}/;')
+          refCgh=$(git ls-remote --heads "${ups_url}" gh-pages | cut -f1)
+
+          echo "$refCgh - $gbCgh"
+          if [ x"$refCgh" != x"$gbCgh" ] ; then
+            echo "Branch 'gh-pages' not on same commit in gitblit-maven repo (${GH_ORG}/gitblit-maven) and reference (${GH_UPSTREAM_ORG}/gitblit-maven)!"
+            exit 11
+          fi
+        continue-on-error: false
 
 
       - name: Create release branch in gitblit-maven repository
@@ -362,6 +434,6 @@ jobs:
 
             A branch `release` was created. You can still add necessary fixes to this branch and push it again, until you are good to go.
 
-            This PR is set as a draft. If left as draft, no downstream workflows are run, such as releasing Docker images. Set it to `Ready for Review` if approving the PR should also perform downstream workflows (Docker images).'
+            This PR is set as a draft. If left as draft, no downstream workflows are run, such as releasing Docker images or releasing to the upstream repository. Set it to `Ready for Review` if approving the PR should also perform downstream workflows (Docker images, upstream release)).'
           fi
 
