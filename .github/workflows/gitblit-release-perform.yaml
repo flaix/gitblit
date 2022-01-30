@@ -258,6 +258,10 @@ jobs:
     needs: info
     # Perform release if the PR was approved.
     if: ${{ needs.info.outputs.pr_review_approved == 'true' }}
+    outputs:
+      release_images: ${{ steps.pr-close.outputs.release-images }}
+      gbsha: ${{ steps.gbsha.outputs.sha }}
+      gbversion: ${{ steps.gbsha.outputs.version }}
     env:
       moxie: moxie-0.9.4/bin/moxie
       versinfo: verinf.sh
@@ -404,6 +408,21 @@ jobs:
           ../$moxie -Dgh.org=${{env.GH_ORG}} publishRelease
 
 
+      - name: Get Gitblit GO tarball SHA sum
+        id: gbsha
+        working-directory: gitblit
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run:  |
+          releassets="${GBLT_RELEASE_TAG}-assets"
+          gh release download ${GBLT_RELEASE_TAG} --pattern 'gitblit-*.tar.gz' --dir "${releassets}"
+          sha256sum "${releassets}/gitblit-${GBLT_RELEASE_VERSION}.tar.gz"
+          gbsha=$(sha256sum "${releassets}/gitblit-${GBLT_RELEASE_VERSION}.tar.gz" | cut -f1 -d' ')
+
+          echo "::set-output name=sha::${gbsha}"
+          echo "::set-output name=version::${GBLT_RELEASE_VERSION}"
+
+
       - name: Merge maven repository release branch to main
         working-directory: gitblit-maven
         run: |
@@ -448,13 +467,21 @@ jobs:
 
 
       - name: Check for closed PR and clean up release branch
+        id: pr-close
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         working-directory: gitblit
         run: |
           checks=10
           while [ $checks -gt 0 ] ; do
-            prstate=$(gh pr view release --json state,isDraft --jq '.state')
+            prret=$(gh pr view release --json state,isDraft,title --jq '"\(.state);\(.isDraft);\(.title)"' || true)
+            if [ -n "$prret" ] ; then
+              prstate=${prret%%;*}
+              prdraft=${prret#*;}
+              prtitle=${prdraft#*;}
+              prdraft=${prdraft%%;*}
+            fi
+
             if [ -z "$prstate" ] ; then
               echo "No PR found for release branch."
               gh pr view release
@@ -473,8 +500,28 @@ jobs:
             echo "Removing release branch"
             git push --delete origin release
             git branch -D release
+
+            if [ -n "${prdraft}" -a "${prdraft}" == false ] ; then
+              echo "PR was not a draft, continue with downstream jobs like Docker images."
+              echo "::set-output name=release-images::true"
+            fi
           else
             echo "::notice ::The pull request was not closed and needs to be closed manually"
           fi
 
-    
+
+
+  docker:
+    name: Release docker images
+    needs: [ perform_release ]
+    # Build docker images only if requested to, i.e. the closed PR was not a draft.
+    if: ${{ needs.perform_release.outputs.release_images == 'true' }}
+    uses: flaix/gitblit-docker/.github/workflows/release-gitblit-docker.yaml@release-script
+    with:
+      gitblit_version: ${{ needs.perform_release.outputs.gbversion }}
+      gitblit_sha: ${{ needs.perform_release.outputs.gbsha }}
+    secrets:
+      INTER_REPO_OPS_PAT: ${{ secrets.INTER_REPO_OPS_PAT }}
+      GITBLIT_RELEASE_PAT: ${{ secrets.GITBLIT_RELEASE_PAT }}
+      DOCKERHUB_GB_USER: ${{ secrets.DOCKERHUB_GB_USER }}
+      DOCKERHUB_GB_TOKEN: ${{ secrets.DOCKERHUB_GB_TOKEN }}
