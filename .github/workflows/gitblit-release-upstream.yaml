@@ -1,0 +1,173 @@
+name: Upstream release to gitblit/gitblit repo
+
+on:
+  workflow_call:
+    secrets:
+      GITBLIT_RELEASE_PAT:
+        required: true
+    outputs:
+      gbsha: 
+        description: "The released Gitblit GO tarball SHA-256 sum"
+        value: ${{ jobs.upstream_release.outputs.gbsha }}
+      gbversion:
+        description: "The released Gitblit GO version"
+        value: ${{ jobs.upstream_release.outputs.gbver }}
+
+env:
+  TARGET_BRANCH: master
+  GH_ORG: flaix
+  GH_UPSTREAM_ORG: gitblit
+  oksh: .github/ok.sh
+
+
+jobs:
+
+# Since we are not working in the real gitblit/gitblit project, upstream
+# the release by pushing branches, tags and releases upstream.
+
+  upstream_release:
+
+    name: Perform release upstream
+    runs-on: ubuntu-latest
+    # Precaution, just to make sure this doesn't run should it end up in some other repo by accident
+    if: ${{ github.repository == 'flaix/gitblit' }}
+    env:
+      moxie: moxie-0.9.4/bin/moxie
+      versinfo: verinf.sh
+      relinfo: relinfo.sh
+
+    steps:
+
+      - name: Download release info results
+        uses: actions/download-artifact@v2
+        with:
+          name: release-info
+
+      - name: Add release info to environment
+        run: |
+          if [ -f ${{env.relinfo}} ] ; then
+            cat ${{env.relinfo}} >> $GITHUB_ENV
+            . ${{env.relinfo}}
+            echo "Perform release in name of user: $REL_USER"
+          else
+            echo "No release info was passed via an artifact."
+            echo "Do not like this. Bail out."
+            exit 11
+          fi
+
+          if [ -f ${versinfo} ] ; then
+            cat ${versinfo} >> $GITHUB_ENV
+            . ${versinfo}
+            echo "Perform release of version $GBLT_RELEASE_VERSION with tag $GBLT_RELEASE_TAG"
+          else
+            echo "No release version info was passed via an artifact."
+            echo "Do not like this. Bail out."
+            exit 12
+          fi
+
+
+      - name: Checkout my repo
+        uses: actions/checkout@v2
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          path: gitblit
+          fetch-depth: 20
+          token: ${{ secrets.GITBLIT_RELEASE_PAT }}
+
+      - name: Fetch all remote branches
+        working-directory: gitblit
+        run: |
+          git fetch --prune --depth=20 origin +refs/heads/*:refs/remotes/origin/*
+
+
+      - name: Determine Git user configuration
+        id: get-git-props
+        uses: flaix/set-git-user-action@v1
+        with:
+          path: gitblit
+          userid: ${{ env.REL_USER }}
+          alt_name: "flaix"
+          alt_email: "2362065+flaix@users.noreply.github.com"
+          set_git_config: global
+
+ 
+
+      - name: Checkout gitblit-maven repo
+        uses: actions/checkout@v2
+        with:
+          repository: ${{ env.GH_ORG }}/gitblit-maven
+          token: ${{ secrets.GITBLIT_RELEASE_PAT }}
+          ref: gh-pages
+          path: gitblit-maven
+          fetch-depth: 3
+
+      - name: Fetch all remote branches
+        working-directory: gitblit-maven
+        run: |
+          git fetch --prune --depth=3 origin +refs/heads/*:refs/remotes/origin/*
+
+
+      - name: Release gitblit upstream
+        working-directory: gitblit
+        run: |
+          ups_url=$(git remote get-url origin | sed -e 's;github.com/${{ env.GH_ORG }}/;github.com/${{ env.GH_UPSTREAM_ORG }}/;')
+          git remote add upstream "$ups_url"
+          git fetch --prune --depth=20 upstream +refs/heads/*:refs/remotes/upstream/*
+          
+          echo "Push new master to upstream"
+          git push upstream refs/remotes/origin/${{ env.TARGET_BRANCH }}:refs/heads/${{ env.TARGET_BRANCH }}
+
+          echo "Push release tag $GBLT_RELEASE_TAG to upstream"
+          git push upstream ${{ env.GBLT_RELEASE_TAG }}
+
+          echo "Push new gh-pages to upstream"
+          git push upstream refs/remotes/origin/gh-pages:refs/heads/gh-pages
+
+
+      - name: Release gitblit-maven upstream
+        working-directory: gitblit-maven
+        run: |
+          ups_url=$(git remote get-url origin | sed -e 's;github.com/${{ env.GH_ORG }}/;github.com/${{ env.GH_UPSTREAM_ORG }}/;')
+          git remote add upstream "$ups_url"
+          git fetch --prune --depth=3 upstream +refs/heads/*:refs/remotes/upstream/*
+
+          echo "Push updated gh-pages to upstream maven repo"
+          git push upstream gh-pages
+
+
+      - name: Create release upstream
+        id: upstream-release
+        working-directory: gitblit
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITBLIT_RELEASE_PAT }}
+          REPO: gitblit
+          UPS_REPO: gitblit
+        run: |
+          echo "Create release upstream for $GBLT_RELEASE_VERSION"
+
+          # Get title, release notes, assets
+          relret=$(gh release view --repo ${GH_ORG}/${REPO} $GBLT_RELEASE_TAG --json name,body || true)
+          if [ -n "$relret" ] ; then
+            relname=$(echo ${relret} | jq -r .name)
+            relbody=$(echo ${relret} | jq -r .body)
+          else
+            echo "Could not find release for tag $GBLT_RELEASE_TAG in $GH_ORG."
+            exit 11
+          fi
+
+          if [ "$relname" != "${GBLT_RELEASE_VERSION}" ] ; then
+            echo "Release found, but name '$relname' does not match relase version $GBLT_RELEASE_VERSION."
+            exit 12
+          fi
+
+          releassets="${GBLT_RELEASE_TAG}-assets"
+          gh release download --repo ${GH_ORG}/${REPO} $GBLT_RELEASE_TAG --dir "${releassets}"
+
+
+          gh release create --repo ${GH_UPSTREAM_ORG}/${UPS_REPO} ${GBLT_RELEASE_TAG} --draft --title "${relname}" --notes "${relbody}" ${releassets}/*
+
+          # If this all went well, publish the release draft
+          echo "Publishing release draft $relname in ${GH_UPSTREAM_ORG}"
+          releaseid=$($oksh list_releases ${GH_UPSTREAM_ORG} ${UPS_REPO} _filter='.[] | "\(.name)\t\(.tag_name)\t\(.id)"' | grep ${GBLT_RELEASE_TAG} | cut -f3)
+          $oksh -q edit_release $GH_UPSTREAM_ORG ${UPS_REPO} ${releaseid} draft=false
+
