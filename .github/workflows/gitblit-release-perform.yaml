@@ -18,7 +18,7 @@ on:
 
 env:
   TARGET_BRANCH: master
-  GH_ORG: gitblit
+  GH_ORG: flaix
   GHPG_BAK_PREFIX: pages-pre-release-
 
 
@@ -259,6 +259,7 @@ jobs:
     # Perform release if the PR was approved.
     if: ${{ needs.info.outputs.pr_review_approved == 'true' }}
     outputs:
+      release_upstream: ${{steps.pr-close.outputs.release-upstream}}
       release_images: ${{ steps.pr-close.outputs.release-images }}
       gbsha: ${{ steps.gbsha.outputs.sha }}
       gbversion: ${{ steps.gbsha.outputs.version }}
@@ -504,16 +505,30 @@ jobs:
             if [ -n "${prdraft}" -a "${prdraft}" == false ] ; then
               echo "PR was not a draft, continue with downstream jobs like Docker images."
               echo "::set-output name=release-images::true"
+              echo "::set-output name=release-upstream::true"
             fi
           else
             echo "::notice ::The pull request was not closed and needs to be closed manually"
           fi
 
 
+# Since we are not working in the real gitblit/gitblit project, now upstream
+# the release by pushing branches, tags and releases upstream.
+
+  upstream:
+
+    name: Upstream
+    needs: perform_release
+    # Upstream only if requested to, i.e. the closed PR was not a draft.
+    if: ${{ needs.perform_release.outputs.release_upstream == 'true' }}
+    uses: flaix/gitblit/.github/workflows/gitblit-release-upstream.yaml@release-builder
+    secrets:
+      GITBLIT_RELEASE_PAT: ${{ secrets.GITBLIT_RELEASE_PAT }}
+
 
   docker:
     name: Release docker images
-    needs: [ perform_release ]
+    needs: [ perform_release, upstream ]
     # Build docker images only if requested to, i.e. the closed PR was not a draft.
     if: ${{ needs.perform_release.outputs.release_images == 'true' }}
     uses: flaix/gitblit-docker/.github/workflows/release-gitblit-docker.yaml@release-script
