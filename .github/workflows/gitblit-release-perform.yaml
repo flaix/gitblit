@@ -6,18 +6,18 @@ on:
       - closed
     branches:
       - release
-      - master
+      - fixup-1.9
   pull_request_review:
     types:
       - submitted
     branches:
       - release
-      - release-builder
+      - release-builder-1.9
   release:
     types: [published]
 
 env:
-  TARGET_BRANCH: master
+  TARGET_BRANCH: fixup-1.9
   GH_ORG: flaix
   GHPG_BAK_PREFIX: pages-pre-release-
 
@@ -371,7 +371,7 @@ jobs:
       - name: Remove perform workflow commit
         working-directory: gitblit
         run: |
-          rpwfcommit=$(git log --oneline origin/master..HEAD | grep "$RPWF_COMMIT_MSG"| cut -d' ' -f1)
+          rpwfcommit=$(git log --oneline origin/fixup-1.9..HEAD | grep "$RPWF_COMMIT_MSG"| cut -d' ' -f1)
           if [ -n "$rpwfcommit" ] ; then
             echo "Removing commit $rpwfcommit from release branch."
             GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick ${rpwfcommit}/drop ${rpwfcommit}/'" git rebase -i "${rpwfcommit}~1"
@@ -391,7 +391,7 @@ jobs:
             fi
           fi
 
-      - name: Merge relase branch to master
+      - name: Merge relase branch to fixup-1.9
         working-directory: gitblit
         run: |
           git checkout ${{env.TARGET_BRANCH}}
@@ -456,7 +456,7 @@ jobs:
               ../$moxie nextPointReleaseCycle
           fi
 
-      # Pushing the master with the merged relase branch should close the PR
+      # Pushing the fixup-1.9 with the merged relase branch should close the PR
       - name: Push target branch
         working-directory: gitblit
         run: |
@@ -521,7 +521,7 @@ jobs:
     needs: perform_release
     # Upstream only if requested to, i.e. the closed PR was not a draft.
     if: ${{ needs.perform_release.outputs.release_upstream == 'true' }}
-    uses: flaix/gitblit/.github/workflows/gitblit-release-upstream.yaml@release-builder
+    uses: flaix/gitblit/.github/workflows/gitblit-release-upstream.yaml@release-builder-1.9
     secrets:
       GITBLIT_RELEASE_PAT: ${{ secrets.GITBLIT_RELEASE_PAT }}
 

@@ -14,7 +14,7 @@ on:
         value: ${{ jobs.upstream_release.outputs.gbver }}
 
 env:
-  TARGET_BRANCH: master
+  TARGET_BRANCH: fixup-1.9
   GH_ORG: flaix
   GH_UPSTREAM_ORG: gitblit
   oksh: .github/ok.sh
@@ -114,7 +114,7 @@ jobs:
           git remote add upstream "$ups_url"
           git fetch --prune --depth=20 upstream +refs/heads/*:refs/remotes/upstream/*
           
-          echo "Push new master to upstream"
+          echo "Push new fixup-1.9 to upstream"
           git push upstream refs/remotes/origin/${{ env.TARGET_BRANCH }}:refs/heads/${{ env.TARGET_BRANCH }}
 
           echo "Push release tag $GBLT_RELEASE_TAG to upstream"

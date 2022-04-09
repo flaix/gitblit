@@ -3,7 +3,7 @@ name: Prepare Gitblit release
 on:
   push:
     branches:
-      - release-builder
+      - release-builder-1.9
       - release
 
 jobs:
@@ -102,7 +102,7 @@ jobs:
       GH_UPSTREAM_ORG: gitblit
       moxie: moxie-0.9.4/bin/moxie
       versinfo: ../verinf.sh
-      targetBranch: master
+      targetBranch: fixup-1.9
       RPWF_COMMIT_MSG: 'Release: Add release workflows'
       RELWF_FILENAME: '.github/workflows/gitblit-release-.*.yaml'
       TRGWF_FILENAME: '.github/workflows/trigger-gitblit-release-.*.yaml'
@@ -153,7 +153,7 @@ jobs:
       - name: Determine fork point
         working-directory: gitblit
         run: |
-          forkPoint=$(git merge-base origin/release-builder origin/$targetBranch)
+          forkPoint=$(git merge-base origin/release-builder-1.9 origin/$targetBranch)
           if [ -z "$forkPoint" ] ; then
             echo "No fork point found to branch release branch off"
             exit 11
@@ -259,7 +259,7 @@ jobs:
 
 
 
-      - name: Determine relase version and tag name
+      - name: Determine release version and tag name
         working-directory: gitblit
         run:  |
           ../$moxie -DversionInfo=${versinfo} determineReleaseVersion > /dev/null
@@ -300,7 +300,7 @@ jobs:
       # pushed. In the latter case the current commit needs to be removed first.
       # Which doesn't make the workflow easier, because it requires a force push.
       - name: Add release workflows to release branch.
-        if: ${{ github.ref == 'refs/heads/release-builder' }}
+        if: ${{ github.ref == 'refs/heads/release-builder-1.9' }}
         working-directory: gitblit
         run:  |
           rpwfcommit=$(git log --oneline origin/${targetBranch}..HEAD | grep "$RPWF_COMMIT_MSG"| cut -d' ' -f1)
@@ -324,7 +324,7 @@ jobs:
           fi
 
           echo "Adding release workflows"
-          git cherry-pick --no-commit origin/${targetBranch}..origin/release-builder
+          git cherry-pick --no-commit origin/${targetBranch}..origin/release-builder-1.9
           git commit -m "$RPWF_COMMIT_MSG"
 
 
