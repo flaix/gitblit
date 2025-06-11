@@ -16,12 +16,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v1
+        uses: actions/checkout@v4
         with:
           submodules: true
 
       - name: Setup Java 7
-        uses: actions/setup-java@v1
+        uses: actions/setup-java@v4
         with:
           java-version: 7
 
@@ -31,7 +31,7 @@ jobs:
           javac -version
 
       - name: Cache moxie and dependencies
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: ~/.moxie
           key: ${{ runner.os }}-moxie-${{ hashFiles('build.moxie') }}
@@ -117,7 +117,7 @@ jobs:
 
 
       - name: Setup Java 7
-        uses: actions/setup-java@v1
+        uses: actions/setup-java@v4
         with:
           java-version: 7
 
@@ -136,7 +136,7 @@ jobs:
 
 
       - name: Checkout my gitblit repo for process
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           path: gitblit
           fetch-depth: 20
@@ -177,7 +177,7 @@ jobs:
 
 
       - name: Checkout gitblit maven repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           path: gitblit-maven
           repository: ${{ env.GH_ORG }}/gitblit-maven

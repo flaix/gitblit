@@ -62,7 +62,7 @@ jobs:
 
 
       - name: Checkout my repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           ref: release
           path: gitblit
@@ -151,8 +151,8 @@ jobs:
             echo "No viable version increment instruction found. Using default: patch"
             echo "INCVER=patch" >> ../${{env.relinfo}}
           fi
-          echo "::set-output name=continue::true"
-          echo "::set-output name=incver::$incver"
+          echo "continue=true" >> $GITHUB_OUTPUT
+          echo "incver=$incver" >> $GITHUB_OUTPUT
 
 
       - name: Clean up release draft if PR was closed unmerged
@@ -181,7 +181,7 @@ jobs:
 
             else
               echo "PR was closed unmerged. Clean up release draft."
-              echo "::set-output name=cleanup-release::true"
+              echo "cleanup-release=true" >> $GITHUB_OUTPUT
 
               if [[ -n "$(git ls-remote --heads origin release)" ]] ; then
                 echo "Clean up release branch"
@@ -220,7 +220,7 @@ jobs:
 
 
       - name: Checkout gitblit-maven repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         if: ${{ steps.pr-closed.outputs.cleanup-release == 'true' }}
         with:
           repository: ${{ env.GH_ORG }}/gitblit-maven
@@ -241,7 +241,7 @@ jobs:
 
 
       - name: Upload results as artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         if: ${{ steps.pr-review.outputs.continue == 'true' }}
         with:
           name: release-info
@@ -280,7 +280,7 @@ jobs:
           moxie-0.9.4/bin/moxie -version
 
       - name: Download release info results
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v4
         with:
           name: release-info
 
@@ -320,7 +320,7 @@ jobs:
 
 
       - name: Checkout my repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           ref: release
           path: gitblit
@@ -346,7 +346,7 @@ jobs:
 
 
       - name: Checkout gitblit-maven repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           repository: ${{ env.GH_ORG }}/gitblit-maven
           token: ${{ secrets.INTER_REPO_OPS_PAT }}
@@ -419,8 +419,8 @@ jobs:
           sha256sum "${releassets}/gitblit-${GBLT_RELEASE_VERSION}.tar.gz"
           gbsha=$(sha256sum "${releassets}/gitblit-${GBLT_RELEASE_VERSION}.tar.gz" | cut -f1 -d' ')
 
-          echo "::set-output name=sha::${gbsha}"
-          echo "::set-output name=version::${GBLT_RELEASE_VERSION}"
+          echo "sha=${gbsha}" >> $GITHUB_OUTPUT
+          echo "version=${GBLT_RELEASE_VERSION}" >> $GITHUB_OUTPUT
 
 
       - name: Merge maven repository release branch to main
@@ -503,7 +503,7 @@ jobs:
 
             if [ -n "${prdraft}" -a "${prdraft}" == false ] ; then
               echo "PR was not a draft, continue with downstream jobs like Docker images."
-              echo "::set-output name=release-images::true"
+              echo "release-images=true" >> $GITHUB_OUTPUT
             fi
           else
             echo "::notice ::The pull request was not closed and needs to be closed manually"
