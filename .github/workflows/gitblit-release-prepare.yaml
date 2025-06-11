@@ -38,15 +38,12 @@ jobs:
           key: ${{ runner.os }}-moxie-${{ hashFiles('build.moxie') }}
 
       - name: Setup Moxie
-        run: |
-          wget http://gitblit.github.io/moxie/maven/com/gitblit/moxie/moxie+ant/0.9.4/moxie+ant-0.9.4.tar.gz
-          tar -xzf moxie+ant-0.9.4.tar.gz
-          moxie-0.9.4/bin/moxie -version
+        uses: flaix/setup-moxie-action@v1
 
       - name: Build with Moxie
         run:  |
-          moxie-0.9.4/bin/moxie
-          moxie-0.9.4/bin/moxie buildGO
+          moxie
+          moxie buildGO
 
       - name: Gitblit GO test run
         run: |
@@ -100,7 +97,6 @@ jobs:
     needs: build_and_test
     env:
       GH_ORG: flaix
-      moxie: moxie-0.9.4/bin/moxie
       versinfo: ../verinf.sh
       targetBranch: master
       RPWF_COMMIT_MSG: 'Release: Add release workflows'
@@ -197,18 +193,14 @@ jobs:
 
 
       - name: Setup Moxie
-        run: |
-          wget http://gitblit.github.io/moxie/maven/com/gitblit/moxie/moxie+ant/0.9.4/moxie+ant-0.9.4.tar.gz
-          tar -xzf moxie+ant-0.9.4.tar.gz
-          $moxie -version
-          rm moxie+ant-0.9.4.tar.gz
+        uses: flaix/setup-moxie-action@v1
 
 
 
       - name: Determine release version and tag name
         working-directory: gitblit
         run:  |
-          ../$moxie -DversionInfo=${versinfo} determineReleaseVersion > /dev/null
+          moxie -DversionInfo=${versinfo} determineReleaseVersion > /dev/null
           cat ${versinfo} >> $GITHUB_ENV
           . ${versinfo}
           echo "Release version $GBLT_RELEASE_VERSION with tag $GBLT_RELEASE_TAG"
@@ -223,7 +215,7 @@ jobs:
           tagname=$(git rev-parse "${{ env.GBLT_RELEASE_TAG}}" -- 2>/dev/null | head -n1)
           if [ -z "$tagname" ] ; then
             echo "Creating release version and release tag."
-            ../$moxie tagRelease
+            moxie tagRelease
           else
             # Check if the current HEAD is already tagged. If not, and if it is not the
             # commit that adds the release workflows, update the release tag.
@@ -286,7 +278,7 @@ jobs:
       - name: Build release artifacts
         working-directory: gitblit
         run: |
-          ../$moxie clean buildAll buildMavenArtifacts
+          moxie clean buildAll buildMavenArtifacts
 
 
 
@@ -316,7 +308,7 @@ jobs:
             echo "Create local gh-pages branch on top of backup tag."
             git branch --force gh-pages pages-pre-release-${{ env.GBLT_RELEASE_TAG }}        
           fi
-          ../$moxie updateSite
+          moxie updateSite
 
 
 
@@ -330,9 +322,9 @@ jobs:
         run: |
           releaseInfo=$(gh release view ${{ env.GBLT_RELEASE_TAG }} --json name,isDraft || true)
           if [ -z "$releaseInfo" ] ; then
-            ../$moxie -Dgh.org=${{env.GH_ORG}} releaseBinaries
+            moxie -Dgh.org=${{env.GH_ORG}} releaseBinaries
           else
-            ../$moxie -Dgh.org=${{env.GH_ORG}} -DupdateRelease=true releaseBinaries
+            moxie -Dgh.org=${{env.GH_ORG}} -DupdateRelease=true releaseBinaries
           fi
 
 

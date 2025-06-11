@@ -32,7 +32,6 @@ jobs:
       pr_review_approved: ${{steps.pr-review.outputs.continue}}
       incver: ${{steps.pr-review.outputs.incver}}
     env:
-      moxie: moxie-0.9.4/bin/moxie
       versinfo: ../verinf.sh
       relinfo: relinfo.sh
 
@@ -66,11 +65,7 @@ jobs:
 
 
       - name: Setup Moxie
-        run: |
-          wget http://gitblit.github.io/moxie/maven/com/gitblit/moxie/moxie+ant/0.9.4/moxie+ant-0.9.4.tar.gz
-          tar -xzf moxie+ant-0.9.4.tar.gz
-          $moxie -version
-          rm moxie+ant-0.9.4.tar.gz
+        uses: flaix/setup-moxie-action@v1
 
 
       - name: Checkout my repo
@@ -91,7 +86,7 @@ jobs:
       - name: Determine relase version and tag name
         working-directory: gitblit
         run:  |
-          ../$moxie -DversionInfo=${versinfo} determineReleaseVersion > /dev/null
+          moxie -DversionInfo=${versinfo} determineReleaseVersion > /dev/null
           cat ${versinfo} >> $GITHUB_ENV
           . ${versinfo}
           echo "Perform release of version $GBLT_RELEASE_VERSION with tag $GBLT_RELEASE_TAG"
@@ -275,7 +270,6 @@ jobs:
       gbsha: ${{ steps.gbsha.outputs.sha }}
       gbversion: ${{ steps.gbsha.outputs.version }}
     env:
-      moxie: moxie-0.9.4/bin/moxie
       versinfo: verinf.sh
       relinfo: relinfo.sh
       INCVER: ${{needs.info.outputs.incver}}
@@ -292,10 +286,7 @@ jobs:
           distribution: 'temurin'
 
       - name: Setup Moxie
-        run: |
-          wget http://gitblit.github.io/moxie/maven/com/gitblit/moxie/moxie+ant/0.9.4/moxie+ant-0.9.4.tar.gz
-          tar -xzf moxie+ant-0.9.4.tar.gz
-          moxie-0.9.4/bin/moxie -version
+        uses: flaix/setup-moxie-action@v1
 
       - name: Download release info results
         uses: actions/download-artifact@v4
@@ -423,7 +414,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         working-directory: gitblit
         run: |
-          ../$moxie -Dgh.org=${{env.GH_ORG}} publishRelease
+          moxie -Dgh.org=${{env.GH_ORG}} publishRelease
 
 
       - name: Get Gitblit GO tarball SHA sum
@@ -465,12 +456,12 @@ jobs:
         run: |
           echo "Increase ${{env.INCVER}} version"
           if [ -z "${{env.INCVER}}" -o "${{env.INCVER}}" == patch ] ; then
-              ../$moxie nextPointReleaseCycle
+              moxie nextPointReleaseCycle
           elif [ "${{env.INCVER}}" == minor ] ; then
-              ../$moxie nextMinorReleaseCycle
+              moxie nextMinorReleaseCycle
           else
               echo "Don't know how to increase ${{env.INCVER}} version. Using patch version instead."
-              ../$moxie nextPointReleaseCycle
+              moxie nextPointReleaseCycle
           fi
 
       # Pushing the master with the merged relase branch should close the PR
