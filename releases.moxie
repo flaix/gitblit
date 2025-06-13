@@ -1,10 +1,10 @@
 #
-# ${project.version} release
+# 1.10.0 release
 #
 r34: {
-    title: ${project.name} ${project.version} released
-    id: ${project.version}
-    date: ${project.buildDate}
+    title: Gitblit 1.10.0 released
+    id: 1.10.0
+    date: 2025-06-13
     note: ''
           From 1.10.0 on Gitblit requires Java 8 as minimum Java version.
 
@@ -2161,6 +2161,6 @@ r1: {
 	- James Moger
 }
 
-snapshot: &r34
-release: &r33
-releases: &r[1..33]
+snapshot: ~
+release: &r34
+releases: &r[1..34]
