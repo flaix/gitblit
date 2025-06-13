@@ -1,0 +1,545 @@
+name: Perform Gitblit release
+
+on:
+  pull_request:
+    types:
+      - closed
+    branches:
+      - release
+      - master
+  pull_request_review:
+    types:
+      - submitted
+    branches:
+      - release
+      - release-builder
+  release:
+    types: [published]
+
+env:
+  TARGET_BRANCH: master
+  GH_ORG: flaix
+  GHPG_BAK_PREFIX: pages-pre-release-
+
+
+jobs:
+
+  info:
+    name: Gather event info
+    runs-on: ubuntu-latest
+    if: ${{ github.repository == 'flaix/gitblit' }}
+    outputs:
+      pr_review_approved: ${{steps.pr-review.outputs.continue}}
+      incver: ${{steps.pr-review.outputs.incver}}
+    env:
+      versinfo: ../verinf.sh
+      relinfo: relinfo.sh
+
+
+    steps:
+      - name: Get event environment
+        run: |
+          echo "GITHUB_SHA: $GITHUB_SHA"
+          echo "GITHUB_RFE: $GITHUB_REF"
+          echo "GITHUB_HEAD_REF: $GITHUB_HEAD_REF"
+          echo "GITHUB_BASE_REF: $GITHUB_BASE_REF"
+          echo "GITHUB_EVENT_NAME: $GITHUB_EVENT_NAME"
+
+      - name: Dump event payload
+        env:
+          GITHUB_CONTEXT_EVENT: ${{ toJSON(github.event) }}
+        run: |
+          echo "Action event name: ${{ github.event_name }}"
+          echo "$GITHUB_CONTEXT_EVENT"
+
+      - name: Report Java version
+        run: |
+          java -version
+          javac -version
+
+      - name: Setup Java 8
+        uses: actions/setup-java@v4
+        with:
+          java-version: 8
+          distribution: 'temurin'
+
+
+      - name: Setup Moxie
+        uses: flaix/setup-moxie-action@v1
+
+
+      - name: Checkout my repo
+        uses: actions/checkout@v4
+        with:
+          ref: release
+          path: gitblit
+          fetch-depth: 20
+
+      - name: Fetch all remote branches
+        working-directory: gitblit
+        run: |
+          git fetch --prune --depth=20 origin +refs/heads/*:refs/remotes/origin/*
+          git branch -a
+          git tag -l
+
+
+      - name: Determine relase version and tag name
+        working-directory: gitblit
+        run:  |
+          moxie -DversionInfo=${versinfo} determineReleaseVersion > /dev/null
+          cat ${versinfo} >> $GITHUB_ENV
+          . ${versinfo}
+          echo "Perform release of version $GBLT_RELEASE_VERSION with tag $GBLT_RELEASE_TAG"
+
+
+      - name: Gather release user from PR review
+        if: ${{ 'pull_request_review' == github.event_name }}
+        run: |
+          if [ -n "${{github.event.review.user.login}}" ] ; then
+            echo "REL_USER=${{github.event.review.user.login}}" >> ${{env.relinfo}}
+            echo "Perform release as user: ${{github.event.review.user.login}}"
+          fi
+
+
+      - name: Match PR and parse version increase info
+        id: pr-review
+        if: ${{ 'pull_request_review' == github.event_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: gitblit
+        run: |
+          echo "PR for ${{ github.event.pull_request.title }}"
+
+          if [ "${{ github.event.pull_request.head.ref }}" != release ] ; then
+            echo "PR is not for release branch."
+            echo "Finishing here."
+            exit 0
+          fi
+
+          if [ "${{ github.event.pull_request.title }}" ~= "Perform release of version " ] ; then
+            prver="${{ github.event.pull_request.title }}"
+            prver="${prver%%Perform release of version }"
+            if [ x"$prver" != x"${{ env.GBLT_RELEASE_TAG }}" ] ; then
+              echo "Version of PR and release version do not match."
+              echo "Finishing here."
+              exit 0
+            fi
+          fi
+
+          if [ "${{github.event.review.state}}" != approved ] ; then
+            echo "PR review did not approve. (${{github.event.review.state}})"
+            echo "Finishing here."
+            exit 0
+          fi
+
+          echo "Parsing for instructions on increasing version."
+          revbody="${{ github.event.review.body }}"
+          if [ -n "$revbody" ] ; then
+            if echo "$revbody" | grep version >/dev/null ; then
+              incver=$(echo "$revbody" | grep -E 'ncre(ase|ment) .* version' | sed -e 's/.*[Ii]ncre\(ase\|ment\) \([^ ]\{1,\}\) version.*/\2/')
+            fi
+          fi
+          if [ -z "$incver" ] ; then
+            echo "Found no version instructions in review body."
+            comment=$(gh pr view -c --json comments --jq '.comments[] | "\(.createdAt)\t\(.body)"' | sort | cut -f2 | grep "version" | tail -n1)
+            if echo "$comment" | grep version >/dev/null ; then
+              incver=$(echo "$comment" | grep -E 'ncre(ase|ment) .* version' | sed -e 's/.*[Ii]ncre\(ase\|ment\) \([^ ]\{1,\}\) version.*/\2/')
+            fi
+          fi
+          if [ -n "$incver" ] ; then
+            echo "Found version increment instruction: >$incver<"
+          else
+            echo "No version increment instructions found, using default: patch"
+            incver=patch
+          fi
+          if [ "$incver" == minor -o "$incver" == patch ] ; then
+            echo "INCVER=$incver" >> ../${{env.relinfo}}
+          else
+            echo "No viable version increment instruction found. Using default: patch"
+            echo "INCVER=patch" >> ../${{env.relinfo}}
+          fi
+          echo "continue=true" >> $GITHUB_OUTPUT
+          echo "incver=$incver" >> $GITHUB_OUTPUT
+
+
+      - name: Clean up release draft if PR was closed unmerged
+        id: pr-closed
+        if: ${{ 'pull_request' == github.event_name }}
+        shell: bash
+        working-directory: gitblit
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "PR for ${{ github.event.pull_request.title }} was ${{ github.event.action }}"
+          if [[ "${{ github.event.pull_request.title }}" =~ "Perform release of version " ]] ; then
+            prver="${{ github.event.pull_request.title }}"
+            prver="${prver##Perform release of version }"
+            if [[ x"$prver" != x"${{ env.GBLT_RELEASE_VERSION }}" ]] ; then
+              echo "Version of PR ($prver) and release version (${{ env.GBLT_RELEASE_VERSION }}) do not match."
+              echo "Finishing here."
+              exit 0
+            fi
+          fi
+
+          if [[ "${{ github.event.action }}" == "closed" ]] ; then
+            echo "PR was closed. Checking state."
+            if [[ "${{github.event.pull_request.merged}}" == "true" ]] ; then
+              echo "PR was merged. We probably shouldn't need to do anything."
+
+            else
+              echo "PR was closed unmerged. Clean up release draft."
+              echo "cleanup-release=true" >> $GITHUB_OUTPUT
+
+              if [[ -n "$(git ls-remote --heads origin release)" ]] ; then
+                echo "Clean up release branch"
+                git checkout release
+                git push --delete origin release
+              else
+                echo "No release branch exists on remote. Nothing to do."
+              fi
+
+              if git tag --contains $(git rev-list  origin/$TARGET_BRANCH..release | tail -n1) | grep ${{ env.GBLT_RELEASE_TAG }} ; then
+                echo "Release tag is only on release branch. Deleting release tag."
+                git push --delete origin ${{ env.GBLT_RELEASE_TAG }}
+
+                # We should probably also remove the release draft here
+                releaseInfo=$(gh release view ${{ env.GBLT_RELEASE_TAG}} --json name,isDraft --jq '.isDraft' || true)
+                if [ -n "$releaseInfo" -a "$releaseInfo" == true ] ; then
+                  echo "Deleting release draft for tag $GBLT_RELEASE_TAG"
+                  gh release delete ${{ env.GBLT_RELEASE_TAG}} --yes
+                else
+                  echo "Not deleting release, info was '$releaseInfo'."
+                fi
+              fi
+
+              if [[ -n "$(git ls-remote --tags origin ${{ env.GHPG_BAK_PREFIX }}${{ env.GBLT_RELEASE_TAG }})" ]] ; then
+                echo "Clean up gh-pages branch"
+                git checkout gh-pages
+                git reset --hard ${{ env.GHPG_BAK_PREFIX }}${{ env.GBLT_RELEASE_TAG }}
+                git push -f origin gh-pages
+                git push --delete origin ${{ env.GHPG_BAK_PREFIX }}${{ env.GBLT_RELEASE_TAG }}
+              else
+                echo "No backup tag exists for gh-pages branch. Cannot reset branch."
+              fi
+
+            fi
+          fi
+
+
+      - name: Checkout gitblit-maven repo
+        uses: actions/checkout@v4
+        if: ${{ steps.pr-closed.outputs.cleanup-release == 'true' }}
+        with:
+          repository: ${{ env.GH_ORG }}/gitblit-maven
+          token: ${{ secrets.INTER_REPO_OPS_PAT }}
+          path: gitblit-maven
+
+      - name: Clean up release draft in gitblit-maven repo
+        if: ${{ steps.pr-closed.outputs.cleanup-release == 'true' }}
+        working-directory: gitblit-maven
+        run: |
+          git fetch --prune origin +refs/heads/*:refs/remotes/origin/*
+          if [[ -n "$(git ls-remote --heads origin release)" ]] ; then
+            echo "Clean up release branch"
+            git push --delete origin release
+          else
+            echo "No release branch exists on remote. Nothing to do."
+          fi
+
+
+      - name: Upload results as artifact
+        uses: actions/upload-artifact@v4
+        if: ${{ steps.pr-review.outputs.continue == 'true' }}
+        with:
+          name: release-info
+          path: |
+            verinf.sh
+            ${{env.relinfo}}
+
+
+
+
+  perform_release:
+    name: Perform release
+    runs-on: ubuntu-latest
+    needs: info
+    # Perform release if the PR was approved.
+    if: ${{ needs.info.outputs.pr_review_approved == 'true' }}
+    outputs:
+      release_upstream: ${{steps.pr-close.outputs.release-upstream}}
+      release_images: ${{ steps.pr-close.outputs.release-images }}
+      gbsha: ${{ steps.gbsha.outputs.sha }}
+      gbversion: ${{ steps.gbsha.outputs.version }}
+    env:
+      versinfo: verinf.sh
+      relinfo: relinfo.sh
+      INCVER: ${{needs.info.outputs.incver}}
+      RPWF_COMMIT_MSG: 'Release: Add release workflows'
+      RELWF_FILENAME: '.github/workflows/gitblit-release-.*.yaml'
+      TRGWF_FILENAME: '.github/workflows/trigger-gitblit-release-.*.yaml'
+
+    steps:
+
+      - name: Setup Moxie
+        uses: flaix/setup-moxie-action@v1
+
+      - name: Download release info results
+        uses: actions/download-artifact@v4
+        with:
+          name: release-info
+
+      - name: Check incver info we got
+        run: |
+          echo "We think that we got INCVER from info job: ${{env.INCVER}}"
+          if [ -f ${{env.relinfo}} ] ; then
+            . ${{env.relinfo}}
+            echo "We got INCVER from the artifact: $INCVER"
+          else
+            echo "Nothing was passed via an artifact"
+          fi
+
+      - name: Add release info to environment
+        run: |
+          if [ -f ${{env.relinfo}} ] ; then
+            cat ${{env.relinfo}} >> $GITHUB_ENV
+            . ${{env.relinfo}}
+            echo "We got INCVER from the artifact: $INCVER"
+            echo "Perform release in name of user: $REL_USER"
+          else
+            echo "No release info was passed via an artifact."
+            echo "Do not like this. Bail out."
+            exit 11
+          fi
+
+          if [ -f ${versinfo} ] ; then
+            cat ${versinfo} >> $GITHUB_ENV
+            . ${versinfo}
+            echo "Perform release of version $GBLT_RELEASE_VERSION with tag $GBLT_RELEASE_TAG"
+          else
+            echo "No release version info was passed via an artifact."
+            echo "Do not like this. Bail out."
+            exit 12
+          fi
+
+
+
+      - name: Checkout my repo
+        uses: actions/checkout@v4
+        with:
+          ref: release
+          path: gitblit
+          fetch-depth: 20
+
+      - name: Fetch all remote branches
+        working-directory: gitblit
+        run: |
+          git fetch --prune --depth=20 origin +refs/heads/*:refs/remotes/origin/*
+          git branch -a
+          git tag -l
+
+      - name: Determine Git user configuration
+        id: get-git-props
+        uses: flaix/set-git-user-action@v1
+        with:
+          path: gitblit
+          userid: ${{ env.REL_USER }}
+          alt_name: "flaix"
+          alt_email: "2362065+flaix@users.noreply.github.com"
+          set_git_config: global
+
+
+
+      - name: Checkout gitblit-maven repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.GH_ORG }}/gitblit-maven
+          token: ${{ secrets.INTER_REPO_OPS_PAT }}
+          ref: release
+          path: gitblit-maven
+          fetch-depth: 3
+
+      - name: Fetch all remote branches
+        working-directory: gitblit-maven
+        run: |
+          git fetch --prune --depth=3 origin +refs/heads/*:refs/remotes/origin/*
+          git branch -a
+          git tag -l
+
+
+
+
+
+      # Find a commit adding this workflow to the release branch and remove it.
+      # That involves resetting the release tag if necessary.
+      - name: Remove perform workflow commit
+        working-directory: gitblit
+        run: |
+          rpwfcommit=$(git log --oneline origin/master..HEAD | grep "$RPWF_COMMIT_MSG"| cut -d' ' -f1)
+          if [ -n "$rpwfcommit" ] ; then
+            echo "Removing commit $rpwfcommit from release branch."
+            GIT_SEQUENCE_EDITOR="sed -i -e 's/^pick ${rpwfcommit}/drop ${rpwfcommit}/'" git rebase -i "${rpwfcommit}~1"
+            echo "Making sure that the tree between the HEAD and release tag are still the same."
+            if git diff-tree -r --name-only "${{ env.GBLT_RELEASE_TAG }}" HEAD | grep -v "${{env.RELWF_FILENAME}}" | grep -v "${{env.TRGWF_FILENAME}}" ; then
+              echo "Found more changed files between release tag and rebased HEAD. Something is not right."
+              echo "Need to abort here."
+              git diff-tree -t "${{ env.GBLT_RELEASE_TAG }}" HEAD
+              exit 1
+            fi
+            currHead="$(git rev-parse HEAD)"
+            if [ "$currHead" != "$(git rev-parse ${GBLT_RELEASE_TAG}^{commit})" ] ; then
+              echo "Moving annotated release tag to current head of release branch"
+              git cat-file -p refs/tags/${GBLT_RELEASE_TAG} | sed "1 s/^object .*$/object ${currHead}/g" | git hash-object -w --stdin -t tag | xargs -I {} git update-ref refs/tags/${GBLT_RELEASE_TAG} {}
+              echo "Push updated release tag"
+              git push -f origin ${{ env.GBLT_RELEASE_TAG }}
+            fi
+          fi
+
+      - name: Merge relase branch to master
+        working-directory: gitblit
+        run: |
+          git checkout ${{env.TARGET_BRANCH}}
+          git merge -m "Merge release branch into $TARGET_BRANCH after release $GBLT_RELEASE_VERSION" release
+
+          #  echo "Pushing updated release branch"
+          #  git push -f origin release
+
+
+      - name: Publish release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: gitblit
+        run: |
+          moxie -Dgh.org=${{env.GH_ORG}} publishRelease
+
+
+      - name: Get Gitblit GO tarball SHA sum
+        id: gbsha
+        working-directory: gitblit
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run:  |
+          releassets="${GBLT_RELEASE_TAG}-assets"
+          gh release download ${GBLT_RELEASE_TAG} --pattern 'gitblit-*.tar.gz' --dir "${releassets}"
+          sha256sum "${releassets}/gitblit-${GBLT_RELEASE_VERSION}.tar.gz"
+          gbsha=$(sha256sum "${releassets}/gitblit-${GBLT_RELEASE_VERSION}.tar.gz" | cut -f1 -d' ')
+
+          echo "sha=${gbsha}" >> $GITHUB_OUTPUT
+          echo "version=${GBLT_RELEASE_VERSION}" >> $GITHUB_OUTPUT
+
+
+      - name: Merge maven repository release branch to main
+        working-directory: gitblit-maven
+        run: |
+          git checkout gh-pages
+          git merge -m "Merge release branch into gh-pages for release $GBLT_RELEASE_VERSION" release
+
+          echo "Push updated gh-pages branch"
+          git push origin gh-pages
+
+          echo "Delete release branch"
+          git push --delete origin release
+
+
+      - name: Remove backup tag from pages branch
+        working-directory: gitblit
+        run: |
+          git push --delete origin ${{ env.GHPG_BAK_PREFIX }}${{ env.GBLT_RELEASE_TAG }}
+
+
+      - name: Increase version
+        working-directory: gitblit
+        run: |
+          echo "Increase ${{env.INCVER}} version"
+          if [ -z "${{env.INCVER}}" -o "${{env.INCVER}}" == patch ] ; then
+              moxie nextPointReleaseCycle
+          elif [ "${{env.INCVER}}" == minor ] ; then
+              moxie nextMinorReleaseCycle
+          else
+              echo "Don't know how to increase ${{env.INCVER}} version. Using patch version instead."
+              moxie nextPointReleaseCycle
+          fi
+
+      # Pushing the master with the merged relase branch should close the PR
+      - name: Push target branch
+        working-directory: gitblit
+        run: |
+          echo "Pushing updated release branch"
+          git push -f origin release:release
+          sleep 2
+          echo "Pushing updated $TARGET_BRANCH branch"
+          git push origin ${{env.TARGET_BRANCH}}
+
+
+      - name: Check for closed PR and clean up release branch
+        id: pr-close
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: gitblit
+        run: |
+          checks=10
+          while [ $checks -gt 0 ] ; do
+            prret=$(gh pr view release --json state,isDraft,title --jq '"\(.state);\(.isDraft);\(.title)"' || true)
+            if [ -n "$prret" ] ; then
+              prstate=${prret%%;*}
+              prdraft=${prret#*;}
+              prtitle=${prdraft#*;}
+              prdraft=${prdraft%%;*}
+            fi
+
+            if [ -z "$prstate" ] ; then
+              echo "No PR found for release branch."
+              gh pr view release
+              checks=0
+            elif [ "$prstate" == OPEN ] ; then
+              echo "Waiting for pull request to close .${checks}."
+              sleep 1
+              : $((checks--))
+            else
+              echo "PR is now $prstate"
+              checks=0
+            fi
+          done
+
+          if [ x"$prstate" != xOPEN ] ; then
+            echo "Removing release branch"
+            git push --delete origin release
+            git branch -D release
+
+            if [ -n "${prdraft}" -a "${prdraft}" == false ] ; then
+              echo "PR was not a draft, continue with downstream jobs like Docker images."
+              echo "release-images=true" >> $GITHUB_OUTPUT
+              echo "release-upstream=true" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "::notice ::The pull request was not closed and needs to be closed manually"
+          fi
+
+
+# Since we are not working in the real gitblit/gitblit project, now upstream
+# the release by pushing branches, tags and releases upstream.
+
+  upstream:
+
+    name: Upstream
+    needs: perform_release
+    # Upstream only if requested to, i.e. the closed PR was not a draft.
+    if: ${{ needs.perform_release.outputs.release_upstream == 'true' }}
+    uses: flaix/gitblit/.github/workflows/gitblit-release-upstream.yaml@release-builder
+    secrets:
+      GITBLIT_RELEASE_PAT: ${{ secrets.GITBLIT_RELEASE_PAT }}
+
+
+  docker:
+    name: Release docker images
+    needs: [ perform_release, upstream ]
+    # Build docker images only if requested to, i.e. the closed PR was not a draft.
+    if: ${{ needs.perform_release.outputs.release_images == 'true' }}
+    uses: flaix/gitblit-docker/.github/workflows/release-gitblit-docker.yaml@release-script
+    with:
+      gitblit_version: ${{ needs.perform_release.outputs.gbversion }}
+      gitblit_sha: ${{ needs.perform_release.outputs.gbsha }}
+    secrets:
+      INTER_REPO_OPS_PAT: ${{ secrets.INTER_REPO_OPS_PAT }}
+      GITBLIT_RELEASE_PAT: ${{ secrets.GITBLIT_RELEASE_PAT }}
+      DOCKERHUB_GB_USER: ${{ secrets.DOCKERHUB_GB_USER }}
+      DOCKERHUB_GB_TOKEN: ${{ secrets.DOCKERHUB_GB_TOKEN }}
