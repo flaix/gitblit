@@ -6,11 +6,11 @@ r34: {
     id: 1.10.0
     date: 2025-06-13
     note: ''
-          From 1.10.0 on Gitblit requires Java 8 as minimum Java version.
-
           Should you have disabled the Flash-based copy-to-clipboard function because it wasn't working anymore (web.allowFlashCopyToClipboard = false), you may want to rethink this and enable it again. The configuration property has the same name, but the mechanism was exchanged. Flash is gone, and a modern JavaScript solution is now used to copy text directly to the clipboard (via clipboard.js).
 
-          The setting 'server.requireClientCertificates' now has three values: required, optional and none. While 'required' is synonymous to the old 'true' value, and 'optional' is synonymous to the old 'false' value, the new 'none' value results in the server never asking the client to present any client certificate at all. The old values 'true' and 'false' can still be used and keep their meaning.
+          The setting `server.requireClientCertificates` now has three values: `required`, `optional` and `none`. While `required` is synonymous to the old `true` value, and `optional` is synonymous to the old `false` value, the new `none` value results in the server never asking the client to present any client certificate at all. The old values `true` and `false` can still be used and keep their meaning.
+
+          From 1.10.0 on Gitblit requires Java 8 as minimum Java version.
 
           ''
     html: ~
@@ -18,9 +18,9 @@ r34: {
           Highlights:
 
           * Support for ECDSA and Ed25519 SSH keys
-          * Move to Java 8
           * Explicitly disable requesting optional client TLS certificates
           * Copy-to-clipboard button is back and working
+          * Minimal required Java version is Java 8
 
           While old DSA SSH host keys can still be used, a new Gitblit installation will no longer
           generate a DSA host key. The default set of host keys is now RSA, ECDSA and Ed25519.
@@ -42,8 +42,8 @@ r34: {
       - Fix incorrect text being copied by copy button on tickets page
     changes:
       - Minimum Java required increased to Java 8. (pr-1218 by @paladox)
-      - Add feedback on invalid keys to SSH key form. (issue-984, pr-1239 by @martinspielmann)
-      - Replace old Flash-based Clippy copy-paste buttons to copy repository URLs and other text to the clipboard with a modern JavaScript-based approach via clipboard.js. (issue-1241, issue-965, pr-1438 by @flaix)
+      - Added feedback on invalid keys to SSH key form. (issue-984, pr-1239 by @martinspielmann)
+      - Replaced old Flash-based Clippy copy-paste buttons to copy repository URLs and other text to the clipboard with a modern JavaScript-based approach via clipboard.js. (issue-1241, issue-965, pr-1438 by @flaix)
     additions:
       - Option to explicitly disable optional client TLS certificates. (issue-1137, pr-1138 by @oddeirik)
       - Support for ECDSA and Ed25519 (EdDSA) user keys. (pr-1427, pr-1272)
