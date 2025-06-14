@@ -1,10 +1,10 @@
 #
-# ${project.version} release
+# 1.10.0 release
 #
 r34: {
-    title: ${project.name} ${project.version} released
-    id: ${project.version}
-    date: ${project.buildDate}
+    title: Gitblit 1.10.0 released
+    id: 1.10.0
+    date: 2025-06-14
     note: ''
           Should you have disabled the Flash-based copy-to-clipboard function because it wasn't working anymore (`web.allowFlashCopyToClipboard = false`), you may want to rethink this and enable it again. The configuration property has the same name, but the mechanism was exchanged. Flash is gone, and a modern JavaScript solution is now used to copy text directly to the clipboard (via clipboard.js).
 
@@ -2174,6 +2174,6 @@ r1: {
 	- James Moger
 }
 
-snapshot: &r34
-release: &r33
-releases: &r[1..33]
+snapshot: ~
+release: &r34
+releases: &r[1..34]
